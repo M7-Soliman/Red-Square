@@ -13,9 +13,21 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:3000", "http://localhost:19006"],
+        "origins": [
+            "http://localhost:19006",  # Expo web default
+            "http://localhost:19000",  # Expo alternative port
+            "http://localhost:8081",   # Metro bundler
+            "http://127.0.0.1:19006",
+            "http://127.0.0.1:19000",
+            "http://127.0.0.1:8081",
+            "http://192.168.1.143:19006",  # Your local IP
+            "http://192.168.1.143:19000",
+            "http://192.168.1.143:8081",
+            "exp://192.168.1.143:8081"     # Expo development
+        ],
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
     }
 })
 
@@ -58,28 +70,37 @@ def allowed_file(filename):
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
-        data = request.json
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON'}), 400
+
+        data = request.get_json()
         message = data.get('message')
         
         if not message:
             return jsonify({'error': 'No message provided'}), 400
 
-        # Create message to Claude with fashion context
-        response = anthropic.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=1000,
-            messages=[{
-                "role": "user",
-                "content": f"""You are a friendly and knowledgeable fashion assistant. 
-                Please provide helpful fashion advice for the following question: {message}"""
-            }]
-        )
+        try:
+            response = anthropic.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=1000,
+                messages=[{
+                    "role": "user",
+                    "content": f"""You are a friendly and knowledgeable fashion assistant. 
+                    Please provide helpful fashion advice for the following question: {message}"""
+                }]
+            )
+            
+            response_text = response.content[0].text
+            return jsonify({
+                'response': response_text
+            })
 
-        return jsonify({'response': response.content[0].text})
+        except Exception as api_error:
+            return jsonify({'error': 'Failed to get response from AI service'}), 500
 
     except Exception as e:
-        print(f"Error in chat endpoint: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
 
 @app.route('/try-on', methods=['POST'])
 def try_on():
@@ -129,4 +150,4 @@ def serve_processed_image(filename):
     return send_from_directory(app.config['PROCESSED_FOLDER'], filename)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5001, debug=True)

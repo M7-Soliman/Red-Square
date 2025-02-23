@@ -44,47 +44,47 @@ export default function ChatScreen() {
     ]).start();
   }, []);
 
-  const sendMessage = async () => {
-    if (!inputText.trim()) return;
+const sendMessage = async () => {
+  if (!inputText.trim()) return;
 
-    const userMessage = {
-      role: 'user',
-      content: inputText.trim(),
+  const userMessage = {
+    role: 'user',
+    content: inputText.trim(),
+  };
+
+  setMessages(prev => [...prev, userMessage]);
+  setInputText('');
+  setIsLoading(true);
+
+  try {
+    const response = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        message: userMessage.content,
+      }),
+    });
+
+    const data = await response.json();
+    
+    const assistantMessage = {
+      role: 'assistant',
+      content: data.response,
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(CHAT_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: userMessage.content,
-        }),
-      });
-
-      const data = await response.json();
-      
-      const assistantMessage = {
-        role: 'assistant',
-        content: data.response,
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: 'Sorry, there was an error processing your message. Please try again.',
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setMessages(prev => [...prev, assistantMessage]);
+  } catch (error) {
+    setMessages(prev => [...prev, {
+      role: 'system',
+      content: 'Sorry, there was an error processing your message. Please try again.',
+    }]);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const MessageBubble = ({ message, index }) => (
     <Animated.View 

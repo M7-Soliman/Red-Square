@@ -8,6 +8,8 @@ import numpy as np
 from dotenv import load_dotenv
 import uuid
 import base64
+from clothing_model import ClothingModel
+import glob
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +49,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Initialize Anthropic client with API key from environment
 anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+# Initialize clothing model
+clothing_model = ClothingModel()
 
 def process_image(image):
     # Apply basic image enhancements
@@ -205,44 +210,74 @@ def clear_chat():
 @app.route('/try-on', methods=['POST'])
 def try_on():
     try:
+        # Debug logging
+        print("Request files:", request.files)
+        print("Request form:", request.form)
+        
         if 'image' not in request.files:
-            return jsonify({'error': 'No image provided'}), 400
+            print("Missing 'image' in request files")
+            return jsonify({'error': 'No clothing image provided'}), 400
             
-        file = request.files['image']
-        if file.filename == '':
+        # Get clothing type from request
+        clothing_type = request.form.get('type', 'upper')
+        print(f"Clothing type received: {clothing_type}")
+        
+        if clothing_type not in ['upper', 'lower']:
+            print(f"Invalid clothing type: {clothing_type}")
+            return jsonify({'error': 'Invalid clothing type'}), 400
+            
+        # Get model image path
+        model_path = os.path.join(app.config['UPLOAD_FOLDER'], 'model.jpg')
+        if not os.path.exists(model_path):
+            print(f"Model image not found at: {model_path}")
+            return jsonify({'error': 'No model image found'}), 400
+            
+        clothing_file = request.files['image']
+        if clothing_file.filename == '':
+            print("Empty filename received")
             return jsonify({'error': 'No selected file'}), 400
             
-        if file and allowed_file(file.filename):
-            # Secure filename and create paths
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            
-            # Save and process image
-            file.save(filepath)
+        if clothing_file and allowed_file(clothing_file.filename):
+            # Create temporary file for clothing image
+            clothing_filename = f"temp_clothing_{uuid.uuid4()}.jpg"
+            clothing_path = os.path.join(app.config['UPLOAD_FOLDER'], clothing_filename)
+            print(f"Saving clothing image to: {clothing_path}")
             
             try:
-                # Open and verify image
-                with Image.open(filepath) as img:
-                    processed_image = process_image(img)
-                    
-                    # Save processed image
-                    processed_filename = f"processed_{filename}"
-                    processed_filepath = os.path.join(app.config['UPLOAD_FOLDER'], processed_filename)
-                    processed_image.save(processed_filepath, format='JPEG', quality=90)
-                    
-                    # Return full URL for the processed image
-                    return jsonify({
-                        'processedImageUrl': f"/uploads/{processed_filename}"
-                    })
-            
+                # Save clothing image
+                clothing_file.save(clothing_path)
+                print("Successfully saved clothing image")
+                
+                # Process try-on
+                print("Starting try-on processing")
+                result_path = clothing_model.try_on_clothing(
+                    model_path,
+                    clothing_path,
+                    clothing_type
+                )
+                
+                # Move result to uploads folder with unique name
+                result_filename = f"result_{uuid.uuid4()}.jpg"
+                final_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
+                os.rename(result_path, final_path)
+                print(f"Processed image saved to: {final_path}")
+                
+                return jsonify({
+                    'processedImageUrl': f"/uploads/{result_filename}"
+                })
+                
             finally:
-                # Clean up original upload
-                if os.path.exists(filepath):
-                    os.remove(filepath)
+                # Clean up temporary files
+                if os.path.exists(clothing_path):
+                    os.remove(clothing_path)
+                    print(f"Cleaned up temporary file: {clothing_path}")
                     
+        print(f"Invalid file type for: {clothing_file.filename}")
+        return jsonify({'error': 'Invalid file type'}), 400
+        
     except Exception as e:
         print(f"Error in try-on endpoint: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -338,6 +373,46 @@ def get_model():
     except Exception as e:
         print(f"Error getting model image: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+def load_default_wardrobe():
+    garments_path = os.path.join(os.path.dirname(__file__), 'garments')
+    wardrobe = []
+    
+    # Manual mapping of filenames to types
+    garment_types = {
+        'blueJeans.png': 'lower',
+        'filaShirt.jpeg': 'upper',
+        'whiteDressShirt.jpg': 'upper',
+        'whiteTankTop.jpeg': 'upper'
+    }
+    
+    if os.path.exists(garments_path):
+        for filename, item_type in garment_types.items():
+            file_path = os.path.join(garments_path, filename)
+            if os.path.exists(file_path):
+                # Copy file to uploads folder with unique name
+                new_filename = f"{os.path.splitext(filename)[0]}_{uuid.uuid4()}{os.path.splitext(filename)[1]}"
+                new_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
+                
+                with open(file_path, 'rb') as src, open(new_path, 'wb') as dst:
+                    dst.write(src.read())
+                
+                wardrobe.append({
+                    'filename': new_filename,
+                    'type': item_type,
+                    'url': f'/uploads/{new_filename}'
+                })
+    
+    return wardrobe
+
+@app.route('/default-wardrobe', methods=['GET'])
+def get_default_wardrobe():
+    try:
+        wardrobe = load_default_wardrobe()
+        return jsonify(wardrobe)
+    except Exception as e:
+        print(f"Error loading default wardrobe: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

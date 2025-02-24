@@ -5,16 +5,21 @@ import { Button, Text, Portal, Modal, ActivityIndicator, IconButton } from 'reac
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
 const COLORS = {
   primary: '#043927',
-  secondary: '#4CAF50',
+  secondary: '#0D6B37',
   white: '#fff',
   accent: '#D1C4E9',
   background: '#f8f9fa',
   danger: '#dc3545',
+  text: {
+    secondary: '#666666',
+  },
 };
 
 export default function TryOnScreen() {
@@ -26,6 +31,11 @@ export default function TryOnScreen() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [itemType, setItemType] = useState('upper');
   const [modelImage, setModelImage] = useState(null);
+  const [currentlyWorn, setCurrentlyWorn] = useState({
+    upper: null,
+    lower: null
+  });
+  const [isLoadingWardrobe, setIsLoadingWardrobe] = useState(true);
   
   const fadeAnim = new Animated.Value(0);
   const slideAnim = new Animated.Value(50);
@@ -47,6 +57,80 @@ export default function TryOnScreen() {
     ]).start();
   }, []);
 
+  useEffect(() => {
+    if (modelImage) {
+      // Clear processed image and currently worn items when model changes
+      setProcessedImage(null);
+      setCurrentlyWorn({
+        upper: null,
+        lower: null
+      });
+    }
+  }, [modelImage]);
+
+  useEffect(() => {
+    const loadDefaultWardrobe = async () => {
+      try {
+        const response = await fetch(`${API_URL}/default-wardrobe`);
+        if (!response.ok) {
+          throw new Error('Failed to load default wardrobe');
+        }
+        const defaultItems = await response.json();
+        
+        // Transform the items to match your wardrobe format
+        const formattedItems = defaultItems.map(item => ({
+          id: Math.random().toString(), // or use a proper UUID
+          uri: `${API_URL}${item.url}`,
+          type: item.type
+        }));
+        
+        setWardrobe(formattedItems);
+      } catch (error) {
+        console.error('Error loading default wardrobe:', error);
+      } finally {
+        setIsLoadingWardrobe(false);
+      }
+    };
+
+    loadDefaultWardrobe();
+  }, []); // Empty dependency array means this runs once when component mounts
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+      tabBarIcon: ({ size }) => (
+        <MaterialCommunityIcons 
+          name="tshirt-crew" 
+          size={size} 
+          color={COLORS.primary} 
+        />
+      ),
+      tabBarLabel: () => (
+        <Text style={{ color: COLORS.primary, fontSize: 12 }}>
+          Try On
+        </Text>
+      ),
+    });
+
+    return () => {
+      navigation.setOptions({
+        headerShown: true,
+        tabBarIcon: ({ size }) => (
+          <MaterialCommunityIcons 
+            name="tshirt-crew" 
+            size={size} 
+            color={COLORS.text.secondary} 
+          />
+        ),
+        tabBarLabel: () => (
+          <Text style={{ color: COLORS.text.secondary, fontSize: 12 }}>
+            Try On
+          </Text>
+        ),
+      });
+    };
+  }, []);
+
   const loadModelImage = async () => {
     try {
       const savedImage = await AsyncStorage.getItem('lastUploadedImage');
@@ -57,28 +141,6 @@ export default function TryOnScreen() {
       console.error('Error loading model image:', error);
     }
   };
-
-  useEffect(() => {
-    navigation.setOptions({
-      headerShown: false,
-      tabBarButton: (props) => (
-        <Button
-          {...props}
-          onPress={() => {
-            if (!modelImage) {
-              Alert.alert(
-                'Model Required',
-                'Please upload a model image first.',
-                [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
-              );
-              return;
-            }
-            navigation.navigate('TryOn');
-          }}
-        />
-      ),
-    });
-  }, [modelImage, navigation]);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -109,44 +171,85 @@ export default function TryOnScreen() {
   };
 
   const removeFromWardrobe = (itemId) => {
-    Alert.alert(
-      'Remove Item',
-      'Are you sure you want to remove this item from your wardrobe?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Remove', 
-          onPress: () => setWardrobe(wardrobe.filter(item => item.id !== itemId)),
-          style: 'destructive'
-        },
-      ]
-    );
+    console.log('Attempting to remove item:', itemId); // Debug log
+  
+    if (Platform.OS === 'web') {
+      // For web, use window.confirm instead of Alert
+      if (window.confirm('Are you sure you want to remove this item from your wardrobe?')) {
+        console.log('Confirmed removal'); // Debug log
+        setWardrobe(prev => prev.filter(item => item.id !== itemId));
+      }
+    } else {
+      // For mobile, use Alert
+      Alert.alert(
+        'Remove Item',
+        'Are you sure you want to remove this item from your wardrobe?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Remove', 
+            onPress: () => {
+              console.log('Confirmed removal'); // Debug log
+              setWardrobe(prev => prev.filter(item => item.id !== itemId));
+            },
+            style: 'destructive'
+          },
+        ]
+      );
+    }
   };
 
-  const tryOnItem = async (itemUri) => {
+  const tryOnItem = async (item) => {
     setIsLoading(true);
-
+  
     try {
       const formData = new FormData();
-      formData.append('image', {
-        uri: itemUri,
-        type: 'image/jpeg',
-        name: 'clothing.jpg',
-      });
-
+      
+      if (Platform.OS === 'web') {
+        const response = await fetch(item.uri);
+        const blob = await response.blob();
+        formData.append('image', blob, 'clothing.jpg');
+      } else {
+        formData.append('image', {
+          uri: item.uri,
+          type: 'image/jpeg',
+          name: 'clothing.jpg',
+        });
+      }
+  
+      formData.append('type', item.type);
+  
       const response = await fetch(`${API_URL}/try-on`, {
         method: 'POST',
         body: formData,
         headers: {
-          'Content-Type': 'multipart/form-data',
+          ...(Platform.OS !== 'web' && {
+            'Content-Type': 'multipart/form-data',
+          }),
         },
       });
-
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process image');
+      }
+  
       const data = await response.json();
-      setProcessedImage(data.processedImageUrl);
+      const fullImageUrl = `${API_URL}${data.processedImageUrl}`;
+      setProcessedImage(fullImageUrl);
+      
+      // Update currently worn items
+      setCurrentlyWorn(prev => ({
+        ...prev,
+        [item.type]: item.id
+      }));
     } catch (error) {
       console.error('Error processing image:', error);
-      Alert.alert('Error', 'Failed to process the image. Please try again.');
+      if (Platform.OS === 'web') {
+        window.alert('Failed to process the image. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to process the image. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -154,18 +257,22 @@ export default function TryOnScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <IconButton
-            icon="arrow-left"
-            iconColor={COLORS.primary}
-            size={24}
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.secondary]}
+        style={styles.header}
+      >
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('Home')}
+          style={styles.backButton}
+        >
+          <MaterialCommunityIcons 
+            name="arrow-left" 
+            size={24} 
+            color={COLORS.white} 
           />
-          <Text style={styles.headerTitle}>Virtual Try-On</Text>
-        </View>
-      </View>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Virtual Try-On</Text>
+      </LinearGradient>
 
       <View style={styles.content}>
         {/* Wardrobe Section */}
@@ -179,7 +286,12 @@ export default function TryOnScreen() {
             Add Item
           </Button>
           
-          {wardrobe.length === 0 ? (
+          {isLoadingWardrobe ? (
+            <View style={styles.emptyWardrobe}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.emptySubText}>Loading wardrobe...</Text>
+            </View>
+          ) : wardrobe.length === 0 ? (
             <View style={styles.emptyWardrobe}>
               <Text style={styles.emptyText}>Your wardrobe is empty</Text>
               <Text style={styles.emptySubText}>Add items to start trying them on!</Text>
@@ -190,21 +302,36 @@ export default function TryOnScreen() {
                 <View key={item.id} style={styles.wardrobeItem}>
                   <Image source={{ uri: item.uri }} style={styles.itemImage} />
                   <View style={styles.itemInfo}>
-                    <Text style={styles.itemType}>{item.type === 'upper' ? 'Upper Body' : 'Lower Body'}</Text>
+                    <View style={styles.itemHeader}>
+                      <Text style={styles.itemType}>
+                        {item.type === 'upper' ? 'Upper Body' : 'Lower Body'}
+                      </Text>
+                      {currentlyWorn[item.type] === item.id && (
+                        <Text style={styles.wornBadge}>Currently Worn</Text>
+                      )}
+                    </View>
                     <View style={styles.itemActions}>
                       <Button
                         mode="contained"
-                        onPress={() => tryOnItem(item.uri)}
-                        style={styles.tryOnButton}
+                        onPress={() => tryOnItem(item)}
+                        style={[
+                          styles.tryOnButton,
+                          currentlyWorn[item.type] === item.id && styles.tryOnButtonActive
+                        ]}
                       >
-                        Try On
+                        {currentlyWorn[item.type] === item.id ? 'Worn' : 'Try On'}
                       </Button>
-                      <IconButton
-                        icon="delete"
-                        size={20}
+                      <TouchableOpacity 
                         onPress={() => removeFromWardrobe(item.id)}
-                        style={styles.deleteButton}
-                      />
+                        style={styles.deleteButtonContainer}
+                      >
+                        <IconButton
+                          icon="delete"
+                          size={20}
+                          iconColor={COLORS.danger}
+                          style={styles.deleteButton}
+                        />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </View>
@@ -346,24 +473,21 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    paddingTop: Platform.OS === 'ios' ? 44 : 24,
-    paddingBottom: 16,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-  },
-  backButton: {
-    marginRight: 8,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 20,
+    paddingBottom: 16,
   },
   headerTitle: {
-    color: COLORS.primary,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '600',
+    color: COLORS.white,
+    flex: 1,
+    textAlign: 'center',
+  },
+  backButton: {
+    padding: 8,
   },
   content: {
     flex: 1,
@@ -437,6 +561,19 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     justifyContent: 'space-between',
   },
+  itemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  wornBadge: {
+    backgroundColor: COLORS.primary,
+    color: COLORS.white,
+    fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
   itemType: {
     fontSize: 14,
     color: '#666',
@@ -448,7 +585,15 @@ const styles = StyleSheet.create({
   tryOnButton: {
     marginRight: 8,
   },
+  tryOnButtonActive: {
+    backgroundColor: COLORS.primary,
+    opacity: 0.7,
+  },
+  deleteButtonContainer: {
+    marginLeft: 8,
+  },
   deleteButton: {
+    margin: 0,
     backgroundColor: COLORS.danger + '20',
   },
   modelImage: {

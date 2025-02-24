@@ -77,21 +77,14 @@ def allowed_file(filename):
 chat_sessions = {}
 
 def get_latest_model_image():
-    """Get the latest uploaded image for the model"""
+    """Get the model image"""
     try:
-        # Get all files in the uploads directory
-        files = os.listdir(app.config['UPLOAD_FOLDER'])
-        if not files:
+        model_path = os.path.join(app.config['UPLOAD_FOLDER'], 'model.jpg')
+        if not os.path.exists(model_path):
             return None
             
-        # Get the most recent file
-        latest_file = max(
-            [os.path.join(app.config['UPLOAD_FOLDER'], f) for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg'))],
-            key=os.path.getctime
-        )
-        
         # Read and encode the image
-        with open(latest_file, 'rb') as img_file:
+        with open(model_path, 'rb') as img_file:
             img_data = base64.b64encode(img_file.read()).decode('utf-8')
             return img_data
     except Exception as e:
@@ -262,6 +255,9 @@ def try_on():
                 os.rename(result_path, final_path)
                 print(f"Processed image saved to: {final_path}")
                 
+                # Clean up old processed images
+                cleanup_processed_images()
+                
                 return jsonify({
                     'processedImageUrl': f"/uploads/{result_filename}"
                 })
@@ -413,6 +409,23 @@ def get_default_wardrobe():
     except Exception as e:
         print(f"Error loading default wardrobe: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def cleanup_processed_images():
+    """Clean up old processed images from uploads folder"""
+    try:
+        uploads_dir = app.config['UPLOAD_FOLDER']
+        for filename in os.listdir(uploads_dir):
+            # Skip model.jpg and base_model.jpg
+            if filename in ['model.jpg', 'base_model.jpg']:
+                continue
+                
+            file_path = os.path.join(uploads_dir, filename)
+            # Remove result files and temporary clothing files
+            if filename.startswith(('result_', 'temp_clothing_')):
+                os.remove(file_path)
+                print(f"Cleaned up: {filename}")
+    except Exception as e:
+        print(f"Error cleaning up processed images: {str(e)}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

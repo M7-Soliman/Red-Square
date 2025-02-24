@@ -8,6 +8,10 @@ An AI-powered fashion recommendation platform that helps users make sustainable 
     <img width="30%" alt="Virtual Try-On Demo" src="./docs/try-on.png" />
 </div>
 
+## 🏆 Recognition
+
+Green Square was awarded a $1,000 prize at the inaugural [SOLVE 2024 Hackathon at Washington and Lee University](https://columns.wlu.edu/wl-holds-inaugural-solve-2024-hackathon-event-on-campus/). The project was recognized for its innovative approach to sustainable fashion, utilizing AI technology to help users visualize and make eco-conscious clothing choices through a virtual "try it on" approach.
+
 ## 🌟 Features
 
 - **Style Assistant**: Get personalized fashion recommendations based on your preferences while prioritizing sustainable options

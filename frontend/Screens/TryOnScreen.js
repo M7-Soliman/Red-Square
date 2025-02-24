@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Image, Animated, Dimensions } from 'react-native';
+import { StyleSheet, View, Image, Animated, Dimensions, ScrollView, Alert, TouchableOpacity, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Button, Text, Portal, Modal, ActivityIndicator, IconButton } from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const COLORS = {
   primary: '#043927',
@@ -13,20 +14,25 @@ const COLORS = {
   white: '#fff',
   accent: '#D1C4E9',
   background: '#f8f9fa',
+  danger: '#dc3545',
 };
 
-const TRY_ON_ENDPOINT = `${API_URL}/try-on`;
-
 export default function TryOnScreen() {
-  const [selectedImage, setSelectedImage] = useState(null);
+  const navigation = useNavigation();
+  const [wardrobe, setWardrobe] = useState([]);
   const [processedImage, setProcessedImage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [itemType, setItemType] = useState('upper');
+  const [modelImage, setModelImage] = useState(null);
   
   const fadeAnim = new Animated.Value(0);
   const slideAnim = new Animated.Value(50);
 
   useEffect(() => {
+    loadModelImage();
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -41,6 +47,39 @@ export default function TryOnScreen() {
     ]).start();
   }, []);
 
+  const loadModelImage = async () => {
+    try {
+      const savedImage = await AsyncStorage.getItem('lastUploadedImage');
+      if (savedImage) {
+        setModelImage(savedImage);
+      }
+    } catch (error) {
+      console.error('Error loading model image:', error);
+    }
+  };
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+      tabBarButton: (props) => (
+        <Button
+          {...props}
+          onPress={() => {
+            if (!modelImage) {
+              Alert.alert(
+                'Model Required',
+                'Please upload a model image first.',
+                [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
+              );
+              return;
+            }
+            navigation.navigate('TryOn');
+          }}
+        />
+      ),
+    });
+  }, [modelImage, navigation]);
+
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -51,23 +90,51 @@ export default function TryOnScreen() {
 
     if (!result.canceled) {
       setSelectedImage(result.assets[0].uri);
-      setShowModal(true);
+      setShowUploadModal(true);
     }
   };
 
-  const processImage = async () => {
+  const addToWardrobe = () => {
+    if (selectedImage && itemType) {
+      const newItem = {
+        id: Date.now().toString(),
+        uri: selectedImage,
+        type: itemType,
+      };
+      setWardrobe([...wardrobe, newItem]);
+      setSelectedImage(null);
+      setShowUploadModal(false);
+      setItemType('upper');
+    }
+  };
+
+  const removeFromWardrobe = (itemId) => {
+    Alert.alert(
+      'Remove Item',
+      'Are you sure you want to remove this item from your wardrobe?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Remove', 
+          onPress: () => setWardrobe(wardrobe.filter(item => item.id !== itemId)),
+          style: 'destructive'
+        },
+      ]
+    );
+  };
+
+  const tryOnItem = async (itemUri) => {
     setIsLoading(true);
-    setShowModal(false);
 
     try {
       const formData = new FormData();
       formData.append('image', {
-        uri: selectedImage,
+        uri: itemUri,
         type: 'image/jpeg',
-        name: 'photo.jpg',
+        name: 'clothing.jpg',
       });
 
-      const response = await fetch(TRY_ON_ENDPOINT, {
+      const response = await fetch(`${API_URL}/try-on`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -79,7 +146,7 @@ export default function TryOnScreen() {
       setProcessedImage(data.processedImageUrl);
     } catch (error) {
       console.error('Error processing image:', error);
-      alert('Error processing image. Please try again.');
+      Alert.alert('Error', 'Failed to process the image. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -87,108 +154,188 @@ export default function TryOnScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[COLORS.primary, COLORS.secondary]}
-        style={styles.header}
-      >
-        <Text style={styles.headerTitle}>Virtual Try-On</Text>
-      </LinearGradient>
-
-      <View style={styles.content}>
-        {selectedImage ? (
-          <Animated.View 
-            style={[
-              styles.imageContainer,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}
-          >
-            <Image 
-              source={{ uri: processedImage || selectedImage }} 
-              style={styles.image}
-              resizeMode="contain"
-            />
-            
-            <View style={styles.buttonContainer}>
-              <Button 
-                mode="contained"
-                onPress={() => {
-                  setSelectedImage(null);
-                  setProcessedImage(null);
-                }}
-                style={styles.button}
-                icon="camera"
-                
-              >
-                Try Another Look
-              </Button>
-            </View>
-          </Animated.View>
-        ) : (
-          <Animated.View 
-            style={[
-              styles.uploadContainer,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}
-          >
-            <IconButton
-              icon="tshirt-crew"
-              size={80}
-              iconColor={COLORS.primary}
-            />
-            <Text style={styles.uploadText}>
-              Upload an image to try on clothes virtually
-            </Text>
-            <Button 
-              mode="contained"
-              onPress={pickImage}
-              style={styles.button}
-              icon="upload"
-              textColor={COLORS.white}
-            >
-              Upload Image
-            </Button>
-          </Animated.View>
-        )}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <IconButton
+            icon="arrow-left"
+            iconColor={COLORS.primary}
+            size={24}
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          />
+          <Text style={styles.headerTitle}>Virtual Try-On</Text>
+        </View>
       </View>
 
+      <View style={styles.content}>
+        {/* Wardrobe Section */}
+        <View style={styles.wardrobeSection}>
+          <Text style={styles.sectionTitle}>My Wardrobe</Text>
+          <Button
+            mode="contained"
+            onPress={pickImage}
+            style={styles.addButton}
+          >
+            Add Item
+          </Button>
+          
+          {wardrobe.length === 0 ? (
+            <View style={styles.emptyWardrobe}>
+              <Text style={styles.emptyText}>Your wardrobe is empty</Text>
+              <Text style={styles.emptySubText}>Add items to start trying them on!</Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.wardrobeList}>
+              {wardrobe.map((item) => (
+                <View key={item.id} style={styles.wardrobeItem}>
+                  <Image source={{ uri: item.uri }} style={styles.itemImage} />
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemType}>{item.type === 'upper' ? 'Upper Body' : 'Lower Body'}</Text>
+                    <View style={styles.itemActions}>
+                      <Button
+                        mode="contained"
+                        onPress={() => tryOnItem(item.uri)}
+                        style={styles.tryOnButton}
+                      >
+                        Try On
+                      </Button>
+                      <IconButton
+                        icon="delete"
+                        size={20}
+                        onPress={() => removeFromWardrobe(item.id)}
+                        style={styles.deleteButton}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Model Display Section */}
+        <View style={styles.modelSection}>
+          <Text style={styles.sectionTitle}>Virtual Model</Text>
+          {isLoading ? (
+            <View style={styles.modelLoadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Processing your outfit...</Text>
+            </View>
+          ) : processedImage ? (
+            <Image
+              source={{ uri: processedImage }}
+              style={styles.modelImage}
+              resizeMode="contain"
+            />
+          ) : modelImage ? (
+            <View style={styles.modelContainer}>
+              <Image
+                source={{ uri: modelImage }}
+                style={styles.modelImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.modelPrompt}>
+                Select an item from your wardrobe to try it on
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.placeholderContainer}>
+              <Text style={styles.placeholderText}>Please upload a model image from the home screen first</Text>
+              <Button 
+                mode="contained" 
+                onPress={() => navigation.navigate('Home')}
+                style={styles.uploadModelButton}
+              >
+                Upload Model
+              </Button>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Upload Modal */}
       <Portal>
         <Modal
-          visible={showModal}
-          onDismiss={() => setShowModal(false)}
+          visible={showUploadModal}
+          onDismiss={() => setShowUploadModal(false)}
           contentContainerStyle={styles.modal}
         >
-          <Text style={styles.modalText}>Process this image?</Text>
-          <View style={styles.modalButtons}>
+          <Text style={styles.modalTitle}>Add to Wardrobe</Text>
+          <Image source={{ uri: selectedImage }} style={styles.previewImage} />
+          
+          <Text style={styles.modalSubtitle}>Select Clothing Type</Text>
+          <View style={styles.clothingTypeContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.typeOption,
+                itemType === 'upper' && styles.typeOptionSelected
+              ]}
+              onPress={() => setItemType('upper')}
+            >
+              <IconButton
+                icon="tshirt-crew"
+                size={32}
+                iconColor={itemType === 'upper' ? COLORS.white : COLORS.primary}
+              />
+              <Text style={[
+                styles.typeText,
+                itemType === 'upper' && styles.typeTextSelected
+              ]}>
+                Upper Body
+              </Text>
+              <Text style={[
+                styles.typeDescription,
+                itemType === 'upper' && styles.typeDescriptionSelected
+              ]}>
+                Shirts, T-shirts, Jackets
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[
+                styles.typeOption,
+                itemType === 'lower' && styles.typeOptionSelected
+              ]}
+              onPress={() => setItemType('lower')}
+            >
+              <IconButton
+                icon="pants"
+                size={32}
+                iconColor={itemType === 'lower' ? COLORS.white : COLORS.primary}
+              />
+              <Text style={[
+                styles.typeText,
+                itemType === 'lower' && styles.typeTextSelected
+              ]}>
+                Lower Body
+              </Text>
+              <Text style={[
+                styles.typeDescription,
+                itemType === 'lower' && styles.typeDescriptionSelected
+              ]}>
+                Pants, Shorts, Skirts
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalActions}>
             <Button 
-              onPress={() => setShowModal(false)}
-              mode="outlined"
+              onPress={() => setShowUploadModal(false)} 
               style={styles.modalButton}
+              mode="outlined"
             >
               Cancel
             </Button>
             <Button 
-              onPress={processImage}
-              mode="contained"
+              mode="contained" 
+              onPress={addToWardrobe} 
               style={styles.modalButton}
             >
-              Process
+              Add Item
             </Button>
           </View>
         </Modal>
       </Portal>
-
-      {isLoading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Processing image...</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -199,86 +346,230 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    padding: 16,
-    paddingTop: 60,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 44 : 24,
+    paddingBottom: 16,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  backButton: {
+    marginRight: 8,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.white,
-    textAlign: 'center',
+    color: COLORS.primary,
+    fontSize: 20,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
+    flexDirection: 'row',
     padding: 16,
   },
-  uploadContainer: {
+  wardrobeSection: {
+    flex: 1,
+    marginRight: 16,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  modelSection: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: COLORS.primary,
+  },
+  addButton: {
+    marginBottom: 16,
+  },
+  emptyWardrobe: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 20,
-    elevation: 4,
   },
-  uploadText: {
-    fontSize: 18,
-    marginVertical: 20,
-    textAlign: 'center',
+  emptyText: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: '#666',
-    maxWidth: '80%',
   },
-  imageContainer: {
+  emptySubText: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 8,
+  },
+  wardrobeList: {
     flex: 1,
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 4,
   },
-  image: {
+  wardrobeItem: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    marginBottom: 12,
+    padding: 8,
+  },
+  itemImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 4,
+  },
+  itemInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'space-between',
+  },
+  itemType: {
+    fontSize: 14,
+    color: '#666',
+  },
+  itemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tryOnButton: {
+    marginRight: 8,
+  },
+  deleteButton: {
+    backgroundColor: COLORS.danger + '20',
+  },
+  modelImage: {
     flex: 1,
     width: '100%',
-    height: '100%',
-  },
-  buttonContainer: {
-    padding: 16,
-    backgroundColor: COLORS.white,
-  },
-  button: {
-    backgroundColor: COLORS.primary,
     borderRadius: 8,
-    height: 48,
-    color: 'fffff'
+  },
+  placeholderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    padding: 24,
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  uploadModelButton: {
+    marginTop: 8,
   },
   modal: {
     backgroundColor: COLORS.white,
-    padding: 20,
+    padding: 24,
     margin: 20,
-    borderRadius: 16,
+    borderRadius: 12,
+    maxWidth: 500,
+    width: '90%',
+    alignSelf: 'center',
   },
-  modalText: {
-    fontSize: 18,
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
     marginBottom: 20,
-    textAlign: 'center',
+    color: COLORS.primary,
+  },
+  modalSubtitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 20,
+    marginBottom: 16,
     color: '#333',
   },
-  modalButtons: {
+  clothingTypeContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  typeOption: {
+    flex: 1,
+    marginHorizontal: 8,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#f5f5f5',
+  },
+  typeOptionSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  typeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
+    color: '#333',
+  },
+  typeTextSelected: {
+    color: COLORS.white,
+  },
+  typeDescription: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  typeDescriptionSelected: {
+    color: COLORS.white + 'CC',
+  },
+  previewImage: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
   },
   modalButton: {
+    marginLeft: 12,
     minWidth: 100,
   },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  modelContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  modelPrompt: {
+    position: 'absolute',
+    bottom: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 12,
+    borderRadius: 8,
+    color: COLORS.white,
+    fontSize: 14,
+  },
+  modelLoadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
-    color: COLORS.primary,
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
+    color: COLORS.primary,
   },
 });

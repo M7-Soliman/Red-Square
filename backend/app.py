@@ -34,7 +34,8 @@ CORS(app, resources={
     }
 })
 
-UPLOAD_FOLDER = 'uploads'
+# Update the UPLOAD_FOLDER path to be relative to the backend directory
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
 
@@ -261,19 +262,25 @@ def upload_file():
             return jsonify({'error': 'No selected file'}), 400
         
         if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
+            # Always use model.jpg as the filename
+            filename = 'model.jpg'
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            # Remove existing file if it exists
+            if os.path.exists(filepath):
+                os.remove(filepath)
             
             # Process the image before saving
             try:
                 with Image.open(file) as img:
                     processed_img = process_image(img)
-                    processed_img.save(filepath)
+                    processed_img.save(filepath, format='JPEG', quality=95)
                     
+                    # Return URL with backend prefix
                     return jsonify({
                         'message': 'File uploaded and processed successfully',
                         'filename': filename,
-                        'url': f'/uploads/{filename}'
+                        'url': f'/backend/uploads/{filename}'
                     }), 200
             except Exception as e:
                 print(f"Error processing image: {str(e)}")
@@ -292,7 +299,7 @@ def list_uploads():
             if allowed_file(filename):
                 files.append({
                     'filename': filename,
-                    'url': f'/uploads/{filename}'
+                    'url': f'backend/uploads/{filename}'
                 })
         return jsonify(files), 200
     except Exception as e:
@@ -316,6 +323,21 @@ def delete_file(filename):
     except Exception as e:
         print(f"Error deleting file: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/get-model', methods=['GET'])
+def get_model():
+    """Get the base model image"""
+    try:
+        model_path = os.path.join(app.config['UPLOAD_FOLDER'], 'base_model.jpg')
+        if not os.path.exists(model_path):
+            return jsonify({'error': 'Model image not found'}), 404
+            
+        # Get the full URL for the model image
+        model_url = request.host_url.rstrip('/') + '/uploads/base_model.jpg'
+        return jsonify({'modelImageUrl': model_url})
+    except Exception as e:
+        print(f"Error getting model image: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

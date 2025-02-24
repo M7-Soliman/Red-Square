@@ -3,10 +3,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { Provider as PaperProvider } from 'react-native-paper';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, Alert } from 'react-native';
 import { Text, IconButton } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
 
 import HomeScreen from './Screens/HomeScreen';
 import ChatScreen from './Screens/ChatScreen';
@@ -26,7 +25,6 @@ const CustomHeader = ({ navigation, route }) => {
 
   useEffect(() => {
     checkModel();
-    // Add listener for when the screen comes into focus
     const unsubscribe = navigation.addListener('focus', () => {
       checkModel();
     });
@@ -51,12 +49,28 @@ const CustomHeader = ({ navigation, route }) => {
         Alert.alert(
           'Model Required',
           'Please upload a model image first to use the Style Assistant.',
-          [{ text: 'OK', style: 'default' }]
+          [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
         );
       }
       return;
     }
     navigation.navigate('Chat');
+  };
+
+  const handleTryOnNavigation = () => {
+    if (!hasModel) {
+      if (Platform.OS === 'web') {
+        window.alert('Please upload a model image first to use Virtual Try-On.');
+      } else {
+        Alert.alert(
+          'Model Required',
+          'Please upload a model image first to use Virtual Try-On.',
+          [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
+        );
+      }
+      return;
+    }
+    navigation.navigate('TryOn');
   };
 
   return (
@@ -81,23 +95,24 @@ const CustomHeader = ({ navigation, route }) => {
         <View style={styles.rightSection}>
           <IconButton
             icon="chat-processing"
-            iconColor={route.name === 'Chat' ? COLORS.white : COLORS.primary}
+            iconColor={hasModel ? (route.name === 'Chat' ? COLORS.white : COLORS.primary) : '#999'}
             size={24}
             onPress={handleChatNavigation}
             style={[
               styles.navButton,
               route.name === 'Chat' && styles.activeNavButton,
-              !hasModel && styles.disabledNavButton
+              !hasModel && styles.disabledNavButton,
             ]}
           />
           <IconButton
             icon="tshirt-crew"
-            iconColor={route.name === 'TryOn' ? COLORS.white : COLORS.primary}
+            iconColor={hasModel ? (route.name === 'TryOn' ? COLORS.white : COLORS.primary) : '#999'}
             size={24}
-            onPress={() => navigation.navigate('TryOn')}
+            onPress={handleTryOnNavigation}
             style={[
               styles.navButton,
-              route.name === 'TryOn' && styles.activeNavButton
+              route.name === 'TryOn' && styles.activeNavButton,
+              !hasModel && styles.disabledNavButton,
             ]}
           />
         </View>
@@ -186,7 +201,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   disabledNavButton: {
-    opacity: 0.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    opacity: 0.6,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
   },
 });

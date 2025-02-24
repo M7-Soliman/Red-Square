@@ -55,31 +55,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  useEffect(() => {
-    navigation.setOptions({
-      tabBarButton: (props) => (
-        <Button
-          {...props}
-          onPress={() => {
-            if (!hasModel) {
-              if (Platform.OS === 'web') {
-                window.alert('Please upload a model image first to use the Style Assistant.');
-              } else {
-                Alert.alert(
-                  'Model Required',
-                  'Please upload a model image first to use the Style Assistant.',
-                  [{ text: 'OK', style: 'default' }]
-                );
-              }
-              return;
-            }
-            navigation.navigate('Chat');
-          }}
-        />
-      ),
-    });
-  }, [hasModel, navigation]);
-
   const handleStyleAssistant = async () => {
     if (modelCheckInProgress.current) return;
     modelCheckInProgress.current = true;
@@ -99,7 +74,32 @@ export default function HomeScreen({ navigation }) {
       }
       navigation.navigate('Chat');
     } catch (error) {
-      console.error('Error checking model:', error);
+      console.error('Error navigating to chat:', error);
+    } finally {
+      modelCheckInProgress.current = false;
+    }
+  };
+
+  const handleTryOn = async () => {
+    if (modelCheckInProgress.current) return;
+    modelCheckInProgress.current = true;
+
+    try {
+      if (!hasModel) {
+        if (Platform.OS === 'web') {
+          window.alert('Please upload a model image first to use Virtual Try-On.');
+        } else {
+          Alert.alert(
+            'Model Required',
+            'Please upload a model image first to use Virtual Try-On.',
+            [{ text: 'OK', style: 'default' }]
+          );
+        }
+        return;
+      }
+      navigation.navigate('TryOn');
+    } catch (error) {
+      console.error('Error navigating to try-on:', error);
     } finally {
       modelCheckInProgress.current = false;
     }
@@ -146,12 +146,17 @@ export default function HomeScreen({ navigation }) {
           </Button>
 
           <Button
-            mode="outlined"
-            onPress={() => navigation.navigate('TryOn')}
-            style={[styles.button, styles.outlinedButton]}
+            mode="contained"
+            onPress={handleTryOn}
+            style={[
+              styles.button,
+              styles.tryOnButton,
+              !hasModel && styles.disabledTryOnButton
+            ]}
             contentStyle={styles.buttonContent}
-            labelStyle={styles.outlinedButtonLabel}
+            labelStyle={styles.buttonLabel}
             icon="hanger"
+            disabled={!hasModel}
           >
             VIRTUAL TRY-ON
           </Button>
@@ -223,16 +228,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1,
   },
-  outlinedButton: {
-    backgroundColor: 'transparent',
-    borderColor: COLORS.white,
-    borderWidth: 2,
-  },
-  outlinedButtonLabel: {
-    color: COLORS.white,
-  },
   disabledButton: {
     backgroundColor: '#81C78480',
     opacity: 0.6,
+  },
+  tryOnButton: {
+    backgroundColor: '#2E7D32',
+    borderWidth: 1,
+    borderColor: '#81C784',
+  },
+  
+  disabledButton: {
+    backgroundColor: '#81C78480',
+    opacity: 0.6,
+  },
+  
+  disabledTryOnButton: {
+    backgroundColor: '#2E7D3240',
+    opacity: 0.5,
+    borderColor: '#81C78450',
   },
 });

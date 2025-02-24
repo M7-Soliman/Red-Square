@@ -115,21 +115,18 @@ export default function ImageUpload({ onImageChange }) {
     
     try {
       const formData = new FormData();
+      const modelFilename = 'model.jpg';
       
       if (Platform.OS === 'web') {
         const response = await fetch(uri);
         const blob = await response.blob();
-        const filename = `upload_${Date.now()}.jpg`;
-        const file = new File([blob], filename, { type: 'image/jpeg' });
+        const file = new File([blob], modelFilename, { type: 'image/jpeg' });
         formData.append('file', file);
       } else {
-        const filename = uri.split('/').pop();
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : 'image';
         formData.append('file', {
           uri,
-          name: filename,
-          type,
+          name: modelFilename,
+          type: 'image/jpeg',
         });
       }
 
@@ -147,8 +144,9 @@ export default function ImageUpload({ onImageChange }) {
         throw new Error(data.error || 'Upload failed');
       }
 
-      const imageUrl = `${API_URL}${data.url}?t=${Date.now()}`;
-      await AsyncStorage.setItem(IMAGE_STORAGE_KEY, imageUrl);
+      // Construct the full URL for the image
+      const imageUrl = `${API_URL}/uploads/model.jpg`;
+      await AsyncStorage.setItem('lastUploadedImage', imageUrl);
       setImage(imageUrl);
       onImageChange?.(imageUrl);
 

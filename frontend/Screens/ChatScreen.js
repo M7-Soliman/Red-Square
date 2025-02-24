@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, Dimensions, Animated } from 'react-native';
+import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, Dimensions, Animated, TouchableOpacity } from 'react-native';
 import { TextInput, Button, Text, Surface, ActivityIndicator, Avatar, IconButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useIsFocused, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { API_URL } from '../config';
 
 const { width } = Dimensions.get('window');
@@ -20,36 +23,178 @@ const COLORS = {
 };
 
 const CHAT_ENDPOINT = `${API_URL}/chat`;
+const CHAT_STORAGE_KEY = '@green_square_chat_messages';
+
+const CONVERSATION_STARTERS = [
+  {
+    text: "What colors would look good on me?",
+    icon: "palette",
+  },
+  {
+    text: "Can you help me find an outfit for a wedding?",
+    icon: "hanger",
+  },
+  {
+    text: "What's trending in fashion this season?",
+    icon: "trending-up",
+  },
+];
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
   const scrollViewRef = useRef();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const isFocused = useIsFocused();
+  const navigation = useNavigation();
+  const inputRef = useRef();
 
+  const handleKeyPress = (e) => {
+    if (e.nativeEvent.key === 'Enter') {
+      // If Shift is held, allow new line
+      if (e.nativeEvent.shiftKey) {
+        return;
+      }
+      // Otherwise send the message
+      e.preventDefault();
+      if (inputText.trim()) {
+        sendMessage(inputText);
+      }
+    }
+  };
+
+  const handleSubmit = () => {
+    if (inputText.trim()) {
+      sendMessage(inputText);
+    }
+  };
+
+  // Clear chat when component mounts
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    clearChat();
   }, []);
 
-  const sendMessage = async () => {
-    if (!inputText.trim()) return;
+  // Handle focus effects
+  useFocusEffect(
+    React.useCallback(() => {
+      // Update navigation appearance
+      navigation.setOptions({
+        tabBarIcon: ({ size }) => (
+          <MaterialCommunityIcons 
+            name="message-text" 
+            size={size} 
+            color={COLORS.primary} 
+          />
+        ),
+        tabBarLabel: () => (
+          <Text style={{ color: COLORS.primary, fontSize: 12 }}>
+            Style Assistant
+          </Text>
+        ),
+        // Hide header when in chat screen
+        headerShown: false,
+      });
+
+      // Clear chat on focus
+      clearChat();
+
+      return () => {
+        // Reset navigation appearance when leaving
+        navigation.setOptions({
+          headerShown: true,
+          tabBarIcon: ({ size }) => (
+            <MaterialCommunityIcons 
+              name="message-text" 
+              size={size} 
+              color={COLORS.text.secondary} 
+            />
+          ),
+          tabBarLabel: () => (
+            <Text style={{ color: COLORS.text.secondary, fontSize: 12 }}>
+              Style Assistant
+            </Text>
+          ),
+        });
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [messages]);
+
+  const loadSavedMessages = async () => {
+    try {
+      const savedMessages = await AsyncStorage.getItem(CHAT_STORAGE_KEY);
+      const savedSessionId = await AsyncStorage.getItem(CHAT_STORAGE_KEY + '_session');
+      if (savedMessages) {
+        setMessages(JSON.parse(savedMessages));
+      }
+      if (savedSessionId) {
+        setSessionId(savedSessionId);
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  };
+
+  const saveChatMessages = async (newMessages, newSessionId) => {
+    try {
+      await AsyncStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(newMessages));
+      if (newSessionId) {
+        await AsyncStorage.setItem(CHAT_STORAGE_KEY + '_session', newSessionId);
+        setSessionId(newSessionId);
+      }
+    } catch (error) {
+      console.error('Error saving messages:', error);
+    }
+  };
+
+  const clearChat = async () => {
+    try {
+      await AsyncStorage.removeItem(CHAT_STORAGE_KEY);
+      await AsyncStorage.removeItem(CHAT_STORAGE_KEY + '_session');
+      setMessages([]);
+      setSessionId(null);
+      setInputText('');
+      
+      // Clear chat on the backend
+      await fetch(`${API_URL}/chat/clear`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId
+        }),
+      });
+    } catch (error) {
+      console.error('Error clearing chat:', error);
+    }
+  };
+
+  const sendMessage = async (message) => {
+    if (!message.trim()) return;
 
     const userMessage = {
       role: 'user',
-      content: inputText.trim(),
+      content: message.trim(),
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -61,9 +206,12 @@ export default function ChatScreen() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         body: JSON.stringify({
           message: userMessage.content,
+          history: messages,
+          session_id: sessionId
         }),
       });
 
@@ -74,7 +222,9 @@ export default function ChatScreen() {
         content: data.response,
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      const newMessages = [...messages, userMessage, assistantMessage];
+      setMessages(newMessages);
+      saveChatMessages(newMessages, data.session_id);
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages(prev => [...prev, {
@@ -98,12 +248,9 @@ export default function ChatScreen() {
       ]}
     >
       {message.role === 'assistant' && (
-        <Avatar.Icon 
-          size={36} 
-          icon="robot" 
-          style={styles.avatar}
-          color={COLORS.white}
-          backgroundColor={COLORS.primary}
+        <Avatar.Image 
+          source={require('../assets/assistant-avatar.png')} 
+          style={styles.assistantAvatar}
         />
       )}
       <Surface 
@@ -123,64 +270,97 @@ export default function ChatScreen() {
     </Animated.View>
   );
 
+  const SuggestionBubble = ({ text, icon, onPress }) => (
+    <TouchableOpacity onPress={() => onPress(text)}>
+      <Surface style={styles.suggestionBubble}>
+        <LinearGradient
+          colors={[COLORS.primary, COLORS.secondary]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.suggestionGradient}
+        >
+          <View style={styles.suggestionContent}>
+            <MaterialCommunityIcons name={icon} size={24} color={COLORS.white} />
+            <Text style={styles.suggestionText}>{text}</Text>
+          </View>
+        </LinearGradient>
+      </Surface>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       <LinearGradient
         colors={[COLORS.primary, COLORS.secondary]}
         style={styles.header}
       >
-        <Text style={styles.headerTitle}>AI Style Assistant</Text>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('Home')}
+          style={styles.backButton}
+        >
+          <MaterialCommunityIcons 
+            name="arrow-left" 
+            size={24} 
+            color={COLORS.white} 
+          />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Style Assistant</Text>
+        <IconButton
+          icon="delete"
+          size={24}
+          onPress={clearChat}
+          iconColor={COLORS.white}
+        />
       </LinearGradient>
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.content}
+        style={styles.keyboardView}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
           ref={scrollViewRef}
-          style={styles.messagesContainer}
           contentContainerStyle={styles.scrollContent}
-          onContentSizeChange={() => scrollViewRef.current.scrollToEnd({ animated: true })}
+          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.length === 0 && (
-            <Animated.View 
-              style={[
-                styles.welcomeContainer,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }],
-                }
-              ]}
-            >
-              <Avatar.Icon 
-                size={80} 
-                icon="robot" 
-                style={styles.welcomeAvatar}
-                color={COLORS.white}
-                backgroundColor={COLORS.primary}
-              />
-              <Text style={styles.welcomeText}>
-                Hello! I'm your AI fashion assistant. Ask me anything about style and fashion!
-              </Text>
-            </Animated.View>
+            <View style={styles.suggestionsContainer}>
+              {CONVERSATION_STARTERS.map((starter, index) => (
+                <Animated.View
+                  key={index}
+                  style={{
+                    opacity: fadeAnim,
+                    transform: [{ translateY: slideAnim }],
+                  }}
+                >
+                  <SuggestionBubble
+                    text={starter.text}
+                    icon={starter.icon}
+                    onPress={sendMessage}
+                  />
+                </Animated.View>
+              ))}
+            </View>
           )}
+          
           {messages.map((message, index) => (
             <MessageBubble key={index} message={message} index={index} />
           ))}
+          
           {isLoading && (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
+              <ActivityIndicator color={COLORS.primary} />
             </View>
           )}
         </ScrollView>
 
         <Surface style={styles.inputContainer} elevation={8}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Ask about fashion advice..."
+            placeholder="Press Enter to send, Shift+Enter for new line..."
             placeholderTextColor={COLORS.text.placeholder}
             multiline
             maxLength={500}
@@ -189,6 +369,9 @@ export default function ChatScreen() {
             outlineColor={COLORS.primary}
             activeOutlineColor={COLORS.primary}
             textColor={COLORS.text.primary}
+            onKeyPress={handleKeyPress}
+            onSubmitEditing={handleSubmit}
+            blurOnSubmit={false}
             theme={{
               colors: {
                 onSurfaceVariant: COLORS.text.secondary,
@@ -202,7 +385,7 @@ export default function ChatScreen() {
             size={28}
             iconColor={COLORS.white}
             containerColor={COLORS.primary}
-            onPress={sendMessage}
+            onPress={handleSubmit}
             disabled={isLoading || !inputText.trim()}
             style={styles.sendButton}
           />
@@ -217,16 +400,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  keyboardView: {
+    flex: 1,
+  },
   header: {
-    padding: 16,
-    paddingTop: 60,
-    paddingBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 20,
+    paddingBottom: 16,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: COLORS.white,
+    flex: 1,
     textAlign: 'center',
+  },
+  backButton: {
+    padding: 8,
   },
   content: {
     flex: 1,
@@ -249,8 +442,11 @@ const styles = StyleSheet.create({
   assistantRow: {
     justifyContent: 'flex-start',
   },
-  avatar: {
+  assistantAvatar: {
+    width: 40,
+    height: 40,
     marginRight: 8,
+    borderRadius: 20,
   },
   messageBubble: {
     maxWidth: width * 0.75,
@@ -276,24 +472,31 @@ const styles = StyleSheet.create({
   assistantMessageText: {
     color: COLORS.text.primary,
   },
-  welcomeContainer: {
+  suggestionsContainer: {
+    padding: 16,
+    gap: 12,
+    backgroundColor: COLORS.white,
+  },
+  suggestionBubble: {
+    borderRadius: 20,
+    elevation: 4,
+    marginVertical: 6,
+    overflow: 'hidden',
+    backgroundColor: COLORS.white,
+  },
+  suggestionGradient: {
+    padding: 16,
+    borderRadius: 20,
+  },
+  suggestionContent: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    marginTop: 40,
+    gap: 12,
   },
-  welcomeAvatar: {
-    marginBottom: 16,
-  },
-  welcomeText: {
-    fontSize: 18,
-    color: COLORS.text.primary,
-    textAlign: 'center',
-    maxWidth: '80%',
-    fontWeight: '500',
-  },
-  loadingContainer: {
-    padding: 10,
-    alignItems: 'center',
+  suggestionText: {
+    color: COLORS.white,
+    fontSize: 16,
+    flex: 1,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -321,5 +524,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     backgroundColor: COLORS.primary,
     borderRadius: 12,
+  },
+  loadingContainer: {
+    padding: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

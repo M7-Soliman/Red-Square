@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { View, StyleSheet, Platform } from 'react-native';
 import { Text, IconButton } from 'react-native-paper';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 
 import HomeScreen from './Screens/HomeScreen';
 import ChatScreen from './Screens/ChatScreen';
@@ -19,50 +21,90 @@ const COLORS = {
   accent: '#81C784',
 };
 
-const CustomHeader = ({ navigation, route }) => (
-  <View style={styles.header}>
-    <View style={styles.headerContent}>
-      <View style={styles.leftSection}>
-        <IconButton
-          icon="leaf"
-          iconColor={COLORS.white}
-          size={24}
-          onPress={() => navigation.navigate('Home')}
-          style={styles.leafIcon}
-        />
-        <Text 
-          style={styles.logo} 
-          onPress={() => navigation.navigate('Home')}
-        >
-          Green Square
-        </Text>
-      </View>
-      
-      <View style={styles.rightSection}>
-        <IconButton
-          icon="chat-processing"
-          iconColor={route.name === 'Chat' ? COLORS.white : COLORS.primary}
-          size={24}
-          onPress={() => navigation.navigate('Chat')}
-          style={[
-            styles.navButton,
-            route.name === 'Chat' && styles.activeNavButton
-          ]}
-        />
-        <IconButton
-          icon="tshirt-crew"
-          iconColor={route.name === 'TryOn' ? COLORS.white : COLORS.primary}
-          size={24}
-          onPress={() => navigation.navigate('TryOn')}
-          style={[
-            styles.navButton,
-            route.name === 'TryOn' && styles.activeNavButton
-          ]}
-        />
+const CustomHeader = ({ navigation, route }) => {
+  const [hasModel, setHasModel] = useState(false);
+
+  useEffect(() => {
+    checkModel();
+    // Add listener for when the screen comes into focus
+    const unsubscribe = navigation.addListener('focus', () => {
+      checkModel();
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  const checkModel = async () => {
+    try {
+      const savedImage = await AsyncStorage.getItem('lastUploadedImage');
+      setHasModel(!!savedImage);
+    } catch (error) {
+      console.error('Error checking model:', error);
+      setHasModel(false);
+    }
+  };
+
+  const handleChatNavigation = () => {
+    if (!hasModel) {
+      if (Platform.OS === 'web') {
+        window.alert('Please upload a model image first to use the Style Assistant.');
+      } else {
+        Alert.alert(
+          'Model Required',
+          'Please upload a model image first to use the Style Assistant.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      }
+      return;
+    }
+    navigation.navigate('Chat');
+  };
+
+  return (
+    <View style={styles.header}>
+      <View style={styles.headerContent}>
+        <View style={styles.leftSection}>
+          <IconButton
+            icon="leaf"
+            iconColor={COLORS.white}
+            size={24}
+            onPress={() => navigation.navigate('Home')}
+            style={styles.leafIcon}
+          />
+          <Text 
+            style={styles.logo} 
+            onPress={() => navigation.navigate('Home')}
+          >
+            Green Square
+          </Text>
+        </View>
+        
+        <View style={styles.rightSection}>
+          <IconButton
+            icon="chat-processing"
+            iconColor={route.name === 'Chat' ? COLORS.white : COLORS.primary}
+            size={24}
+            onPress={handleChatNavigation}
+            style={[
+              styles.navButton,
+              route.name === 'Chat' && styles.activeNavButton,
+              !hasModel && styles.disabledNavButton
+            ]}
+          />
+          <IconButton
+            icon="tshirt-crew"
+            iconColor={route.name === 'TryOn' ? COLORS.white : COLORS.primary}
+            size={24}
+            onPress={() => navigation.navigate('TryOn')}
+            style={[
+              styles.navButton,
+              route.name === 'TryOn' && styles.activeNavButton
+            ]}
+          />
+        </View>
       </View>
     </View>
-  </View>
-);
+  );
+};
 
 export default function App() {
   return (
@@ -142,5 +184,9 @@ const styles = StyleSheet.create({
   },
   activeNavButton: {
     backgroundColor: COLORS.primary,
+  },
+  disabledNavButton: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
 });

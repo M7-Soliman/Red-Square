@@ -1,21 +1,35 @@
 # Sustainable Fashion AI
 
-An AI-powered fashion recommendation platform that helps users make sustainable fashion choices.
+An AI-powered fashion recommendation platform that helps users make sustainable fashion choices through personalized styling and virtual try-on capabilities.
 
-<img width="1457" alt="image" src="https://github.com/user-attachments/assets/c6c2d172-9b19-4821-ab53-dd22a60c6121" />
+<div style="display: flex; gap: 20px; margin: 30px 0;">
+    <img width="30%" alt="Home Page" src="./docs/home.png" />
+    <img width="30%" alt="Style Assistant Demo" src="./docs/assistant.png" />
+    <img width="30%" alt="Virtual Try-On Demo" src="./docs/try-on.png" />
+</div>
 
 ## 🌟 Features
 
 - **Style Assistant**: Get personalized fashion recommendations based on your preferences while prioritizing sustainable options
-- **Virtual Try-On**: Visualize how different pieces would look on you before making a purchase
-- **AI-Powered Recommendations**: Advanced algorithms that consider both style preferences and sustainability metrics
+- **Virtual Try-On**: Visualize how different pieces would look on you using advanced AI technology
+- **AI-Powered Recommendations**: Advanced algorithms powered by Claude AI that consider both style preferences and sustainability metrics
+- **Digital Wardrobe**: Manage your clothing collection and experiment with different combinations
+
+## Tech Stack
+
+- React Native + Expo
+- AsyncStorage for local data persistence
+- Flask
+- Claude AI (Anthropic)
+- PIL for image processing
+- OOTDiffusion for virtual try-on
 
 ## Quick Start
 
 1. **Clone the repository**
    ```bash
-   git clone <https://github.com/M7-Soliman/Red-Square>
-   cd green-square
+   git clone https://github.com/FekryMostafa/Green-Square
+   cd Green-square
    ```
 
 2. **Set up the backend**
@@ -32,7 +46,7 @@ An AI-powered fashion recommendation platform that helps users make sustainable 
    # Start the Flask server
    python app.py
    ```
-   Server will run on http://localhost:5000
+   Server will run on http://localhost:5001
 
 3. **Set up the frontend**
    ```bash
@@ -50,18 +64,19 @@ An AI-powered fashion recommendation platform that helps users make sustainable 
 
 ## Development Setup
 
-1. **Find your local IP address**:
-   - Windows: `ipconfig`
-   - Mac/Linux: `ifconfig`
-   - Use this IP in `frontend/config.js`
-
-2. **Configure environment**:
+1. **Configure your environment**:
    ```bash
    # backend/.env
    ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   FLASK_SECRET_KEY=your_secret_key_here
    ```
 
-3. **Run in development**:
+2. **Find your local IP address**:
+   - Windows: `ipconfig`
+   - Mac/Linux: `ifconfig`
+   - Update `frontend/config.js` with your IP address
+
+3. **Run in development mode**:
    ```bash
    # Terminal 1 - Backend
    cd backend
@@ -77,38 +92,3 @@ An AI-powered fashion recommendation platform that helps users make sustainable 
 - If you see CORS errors, ensure your IP is correctly set in `frontend/config.js`
 - If the API calls fail, check that your Anthropic API key is correctly set in `.env`
 - Make sure both backend and frontend servers are running simultaneously
-
-## Tech Stack
-
-**Frontend:**
-- React Native + Expo
-- React Navigation
-- React Native Paper
-
-**Backend:**
-- Flask
-- Claude AI
-
-## Local Development
-
-1. Find your local IP address:
-   - Windows: `ipconfig`
-   - Mac/Linux: `ifconfig`
-
-2. Update `frontend/config.js` with your IP address
-
-3. Start the backend:
-   ```bash
-   cd backend
-   python app.py
-   ```
-
-4. Start the frontend:
-   ```bash
-   cd frontend
-   expo start
-   ```
-
-The app should now work on both web on your local network.
-
-
